@@ -25,7 +25,8 @@ declare module 'vue-router/auto-routes' {
     '/README': RouteRecordInfo<'/README', '/README', Record<never, never>, Record<never, never>>,
     '/upload': RouteRecordInfo<'/upload', '/upload', Record<never, never>, Record<never, never>>,
     '/watch/': RouteRecordInfo<'/watch/', '/watch', Record<never, never>, Record<never, never>>,
-    '/watch/VideoPlayerWithSubtitles': RouteRecordInfo<'/watch/VideoPlayerWithSubtitles', '/watch/VideoPlayerWithSubtitles', Record<never, never>, Record<never, never>>,
+    '/watch/AnalyzePopup': RouteRecordInfo<'/watch/AnalyzePopup', '/watch/AnalyzePopup', Record<never, never>, Record<never, never>>,
+    '/watch/VideoPlayer': RouteRecordInfo<'/watch/VideoPlayer', '/watch/VideoPlayer', Record<never, never>, Record<never, never>>,
     '/watch/wordCard': RouteRecordInfo<'/watch/wordCard', '/watch/wordCard', Record<never, never>, Record<never, never>>,
   }
 }

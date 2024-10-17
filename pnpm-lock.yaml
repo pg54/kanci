@@ -23,6 +23,9 @@ dependencies:
   '@vueuse/head':
     specifier: ^2.0.0
     version: 2.0.0(vue@3.5.11)
+  clipboard-copy:
+    specifier: ^4.0.1
+    version: 4.0.1
   nprogress:
     specifier: ^0.2.0
     version: 0.2.0
@@ -4770,6 +4773,10 @@ packages:
       slice-ansi: 5.0.0
       string-width: 7.2.0
     dev: true
+
+  /clipboard-copy@4.0.1:
+    resolution: {integrity: sha512-wOlqdqziE/NNTUJsfSgXmBMIrYmfd5V0HCGsR8uAKHcg+h9NENWINcfRjtWGU77wDHC8B8ijV4hMTGYbrKovng==}
+    dev: false
 
   /cliui@8.0.1:
     resolution: {integrity: sha512-BSeNnyus75C4//NQ9gQt1/csTXyo/8Sb+afLAkzAptFuMsod9HFokGNudZpi/oQV73hnVK+sR+5PVRMd+Dr7YQ==}

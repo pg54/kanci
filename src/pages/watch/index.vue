@@ -1,5 +1,5 @@
 <script setup>
-import VideoPlayerWithSubtitles from './VideoPlayerWithSubtitles.vue'
+import VideoPlayerWithSubtitles from './VideoPlayer.vue'
 </script>
 
 <template>

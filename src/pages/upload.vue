@@ -6,7 +6,7 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 const videoStore = useVideoStore()
 
-const { videoSrc, subtitleSrc } = storeToRefs(videoStore)
+const { videoSrc, subtitleSrc, episode, seriesName } = storeToRefs(videoStore)
 
 // 新增：用于存储文件名
 const videoFileName = ref('')
@@ -17,12 +17,22 @@ function handleVideoSelect(event) {
   if (file) {
     videoStore.setVideoSrc(URL.createObjectURL(file))
     videoFileName.value = file.name // 设置视频文件名
+
+    // 提取视频文件名中的剧集信息
+    const episodeRegex = /S(\d+)E(\d+)/
+    const match = file.name.match(episodeRegex)
+    console.log('match', match)
+    if (match[0]) {
+      videoStore.setEpisode(match[0])
+    }
   }
 }
 
 // Add this function to convert SRT to VTT
 function convertSrtToVtt(srtContent) {
-  const vttContent = `WEBVTT\n\n${srtContent.replace(/(\d{2}):(\d{2}):(\d{2}),(\d{3})/g, '$1:$2:$3.$4')}`
+  const vttContent = `WEBVTT\n\n${srtContent
+    .replace(/\{[^}]*\}/g, '')
+    .replace(/(\d{2}):(\d{2}):(\d{2}),(\d{3})/g, '$1:$2:$3.$4')}`
   return vttContent
 }
 
@@ -49,11 +59,17 @@ function loadAndNavigate() {
     alert('请选择视频和字幕文件')
   }
 }
+
+onMounted(() => {
+  videoStore.setSeriesName('TBBT')
+})
 </script>
 
 <template>
   <div class="container">
     <div id="file-inputs" class="file-inputs">
+      <input v-model="seriesName" text-center type="text" placeholder="剧名">
+      <span class="file-name" text-center>{{ episode }}</span>
       <label class="file-input-label">
         <input type="file" accept="mp4/*" class="file-input" @change="handleVideoSelect">
         <span class="file-input-text">选择视频</span>

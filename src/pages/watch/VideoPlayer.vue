@@ -5,12 +5,13 @@ import 'video.js/dist/video-js.css'
 import { storeToRefs } from 'pinia'
 import { useVirtualList } from '@vueuse/core'
 import WordCard from './wordCard.vue'
+import AnalyzePopup from './AnalyzePopup.vue' // 新增导入
 import supabase from '~/api/supabase'
 
 const videoStore = useVideoStore()
 
 // 使用 store 中的值
-const { videoSrc, subtitleSrc } = storeToRefs(videoStore)
+const { videoSrc, subtitleSrc, seriesName, episode } = storeToRefs(videoStore)
 
 const videoPlayer = ref(null)
 const player = ref(null)
@@ -22,6 +23,9 @@ const selectedWord = ref('')
 const selectedStr = ref('')
 const isWordCardVisible = ref(false)
 const subtitleListHeight = ref('0px')
+const showSubtitles = ref(true)
+const showAnalyzePopup = ref(false) // 新增状态
+const selectedChinese = ref('')
 
 // 添加一个计算属性来创建单词到状态的映射
 const wordStatusMap = computed(() => {
@@ -51,12 +55,14 @@ async function getList() {
     const { data, error } = await supabase
       .from('word')
       .select('*')
+      .eq('series_name', seriesName.value)
+      .eq('episode', episode.value)
 
     if (error) {
       console.error('Supabase error:', error)
       return
     }
-    console.log('Fetched words:', data)
+    console.log('Fetched words:', data.length)
     words.value = data
   }
   catch (e) {
@@ -119,14 +125,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', adjustSubtitleListHeight)
 })
 
-// 跳转到指定时间
-function jumpTo(time) {
-  if (player.value) {
-    player.value.currentTime(time)
-    player.value.play()
-  }
-}
-
 // 判断字幕项是否为当前活动项
 function isActive(item) {
   const currentTime = player.value ? player.value.currentTime() : 0
@@ -139,7 +137,8 @@ function adjustSubtitleListHeight() {
   if (videoContainer) {
     const videoHeight = videoContainer.offsetHeight
     const windowHeight = window.innerHeight
-    subtitleListHeight.value = `${windowHeight - videoHeight}px`
+    const toolbarHeight = 30 // Height of the toolbar
+    subtitleListHeight.value = `${windowHeight - videoHeight - toolbarHeight}px`
   }
 }
 
@@ -158,14 +157,16 @@ async function loadSubtitles(track) {
         endTime: cue.endTime,
         english,
         chinese,
+        isPlaying: false,
       })
     }
     resolve()
   })
 }
 
+const canAdd = ref(true)
 // 修改 handleWordClick 函数
-function handleWordClick(word, str) {
+async function handleWordClick(word, str, chinese, notFamiliar) {
   // Remove punctuation from the beginning and end of the word
   const singleWord = word.replace(/^[^\w\s]+|[^\w\s]+$/g, '')
     .replace(/'/g, '\'') // Normalize apostrophes
@@ -176,12 +177,13 @@ function handleWordClick(word, str) {
 
   selectedWord.value = finalWord
   selectedStr.value = str
+  selectedChinese.value = chinese
   isWordCardVisible.value = true
+  canAdd.value = !notFamiliar
 }
 
 function closeWordCard() {
   isWordCardVisible.value = false
-  // selectedWord.value = ''
 }
 
 // 虚拟列表设置
@@ -203,6 +205,54 @@ function initializeVirtualList() {
       containerRef.value.dispatchEvent(new Event('scroll'))
     }
   })
+}
+
+// 添加一个新的函数来处理英文句子的分割
+function splitEnglishSentence(sentence) {
+  // 这个正则表达式会匹配单词、缩写和标点符号
+  return sentence.match(/\b[\w']+\b|[.,!?;:]/g) || []
+}
+
+function togglePlayPause(item) {
+  const { startTime: time, isPlaying } = item.data
+  if (isPlaying) {
+    player.value.currentTime(time)
+    player.value.pause()
+  }
+  else {
+    player.value.currentTime(time)
+    player.value.play()
+  }
+  item.data.isPlaying = !isPlaying
+}
+
+// New toolbar
+function toggleSubtitles() {
+  showSubtitles.value = !showSubtitles.value
+  // 切换播放器的字幕
+  player.value.textTracks()[0].mode = showSubtitles.value ? 'showing' : 'hidden'
+}
+
+function analyze() {
+  showAnalyzePopup.value = !showAnalyzePopup.value
+}
+
+function openAI() {
+  // Implement AI functionality
+  console.log('AI button clicked')
+}
+
+function closeAnalyzePopup() {
+  showAnalyzePopup.value = false
+}
+
+// Add this new ref for playback speed
+const playbackSpeed = ref(1)
+
+// Replace the toggleSubtitles function with this new function
+function togglePlaybackSpeed() {
+  playbackSpeed.value = playbackSpeed.value === 1 ? 0.5 : 1
+  player.value.playbackRate(playbackSpeed.value)
 }
 </script>
 
@@ -248,27 +298,40 @@ function initializeVirtualList() {
         >
           <div class="english-subtitle">
             <span
-              v-for="(word, wordIndex) in item.data.english.split(' ')"
+              v-for="(word, wordIndex) in splitEnglishSentence(item.data.english)"
               :key="wordIndex"
               class="word"
               :class="{
-                recognize: wordStatusMap.get(word.toLowerCase()) === 1,
-                familiar: wordStatusMap.get(word.toLowerCase()) === 2,
-                forget: wordStatusMap.get(word.toLowerCase()) === 3,
+                notFamiliar: wordStatusMap.get(word.toLowerCase()) === 3,
+                punctuation: /^[.,!?;:]$/.test(word),
               }"
               style="padding: 2px;"
-              @click="handleWordClick(word, item.data.english)"
+              @click="!(/^[.,!?;:]$/.test(word)) && handleWordClick(word, item.data.english, item.data.chinese, wordStatusMap.get(word.toLowerCase()) === 3)"
             >
               {{ word }}
             </span>
           </div>
           <div>
-            <button class="jump-button" @click="jumpTo(item.data.startTime)">
-              Jump
+            <button class="control-button" @click="togglePlayPause(item)">
+              <div v-if="!item.data.isPlaying" i-carbon-play-filled-alt />
+              <div v-else i-carbon-pause-outline-filled />
             </button>
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- New toolbar -->
+    <div class="toolbar">
+      <button class="toolbar-button" @click="togglePlaybackSpeed">
+        {{ playbackSpeed }}x
+      </button>
+      <button class="toolbar-button" @click="analyze">
+        <div i-carbon:application-virtual />
+      </button>
+      <button class="toolbar-button" @click="openAI">
+        <div i-carbon:ai-governance-lifecycle />
+      </button>
     </div>
 
     <!-- WordCard Popup -->
@@ -276,9 +339,14 @@ function initializeVirtualList() {
       :visible="isWordCardVisible"
       :word="selectedWord"
       :sentence="selectedStr"
+      :chinese="selectedChinese"
+      :can-add="canAdd"
       @close="closeWordCard"
       @update-word-status="updateWordStatus"
     />
+
+    <!-- AnalyzePopup -->
+    <AnalyzePopup v-if="showAnalyzePopup" @close="closeAnalyzePopup" />
   </div>
 </template>
 
@@ -367,7 +435,7 @@ video {
   color: white;
 }
 
-.familiar {
+.notFamiliar {
   background-color: #ffc107;
   color: black;
 }
@@ -375,5 +443,46 @@ video {
 .forget {
   background-color: #f44336;
   color: white;
+}
+
+.word.punctuation {
+  margin-left: -2px;
+  margin-right: 2px;
+  cursor: default;
+}
+
+/* New toolbar styles */
+.toolbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background-color: #f0f0f0;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 0 10px;
+  box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.toolbar-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: #333;
+  padding: 5px;
+  transition: color 0.3s ease;
+}
+
+.toolbar-button:hover {
+  color: #007bff;
+}
+
+/* Adjust subtitle list to account for toolbar */
+#subtitle-list {
+  padding-bottom: 10px;
+  margin-bottom: 40px; /* Same as toolbar height */
 }
 </style>

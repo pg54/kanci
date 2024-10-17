@@ -1,6 +1,7 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import supabase from '~/api/supabase'
+import { deepseek } from '~/api/deepseek'
 
 const props = defineProps({
   word: {
@@ -11,13 +12,26 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  chinese: {
+    type: String,
+    required: true,
+  },
   visible: {
     type: Boolean,
     default: false,
   },
+  canAdd: {
+    type: Boolean,
+    default: true,
+  },
 })
 
 const emit = defineEmits(['close', 'updateWordStatus'])
+
+const videoStore = useVideoStore()
+
+// 使用 store 中的值
+const { seriesName, episode } = storeToRefs(videoStore)
 
 const phonetic = ref('')
 const audio = ref('')
@@ -25,21 +39,26 @@ const meanings = ref([])
 const isLoading = ref(false)
 const hasError = ref(false)
 
+const jsonContent = ref({})
+
+const isDeepseekLoading = ref(false)
+
+async function getWordData(word) {
+  const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${props.word}`)
+  const data = await response.json()
+  if (data && data.length > 0) {
+    const wordData = data[0]
+    phonetic.value = wordData.phonetic || ''
+    audio.value = wordData.phonetics.find(p => p.audio)?.audio || ''
+    meanings.value = wordData.meanings.slice(0, 3)
+  }
+}
+
 watch(() => props.word, async () => {
   isLoading.value = true
   hasError.value = false
   try {
-    const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${props.word}`)
-    const data = await response.json()
-    if (data && data.length > 0) {
-      const wordData = data[0]
-      phonetic.value = wordData.phonetic || ''
-      audio.value = wordData.phonetics.find(p => p.audio)?.audio || ''
-      meanings.value = wordData.meanings.slice(0, 3)
-    }
-    else {
-      hasError.value = true
-    }
+    console.log('props.word', props.word)
   }
   catch (error) {
     console.error('Error fetching word data:', error)
@@ -60,44 +79,50 @@ function close() {
   emit('close')
 }
 
-async function addWordToDatabase(status) {
+async function handleDeepseek() {
+  isDeepseekLoading.value = true
   try {
-    const { data, error } = await supabase
-      .from('word')
-      .insert([
-        {
-          name: props.word,
-          sentence: props.sentence,
-          status,
-          score: 0,
-          // user_id: user.id, // Add the user's ID to the insert
-        },
-      ])
+    const content = await deepseek(props.sentence, props.chinese, props.word)
 
-    if (error)
-      throw error
-    console.log('Word added successfully:', data)
-    // You might want to add some user feedback here
-    emit('updateWordStatus', props.word, status)
+    // 使用正则表达式提取 JSON 部分
+    const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/)
+
+    if (jsonMatch && jsonMatch[1]) {
+      try {
+        jsonContent.value = JSON.parse(jsonMatch[1])
+      }
+      catch (error) {
+        console.error('Error parsing JSON:', error)
+      }
+    }
   }
   catch (error) {
-    console.error('Error adding word to database:', error)
-    // You might want to add some error handling for the user here
+    console.error('Error fetching deepseek content:', error)
+  }
+  finally {
+    isDeepseekLoading.value = false
   }
 }
 
-function handleRecognize() {
-  addWordToDatabase(1)
-  close()
-}
+async function handleMemorize() {
+  const { data, error } = await supabase
+    .from('word')
+    .insert([
+      {
+        name: props.word,
+        sentence: props.sentence,
+        status: 3,
+        episode: episode.value,
+        series_name: seriesName.value,
+        // user_id: user.id, // Add the user's ID to the insert
+      },
+    ])
 
-function handleFamiliar() {
-  addWordToDatabase(2)
-  close()
-}
-
-function handleForget() {
-  addWordToDatabase(3)
+  if (error)
+    throw error
+  console.log('Word added successfully:', data)
+  // You might want to add some user feedback here
+  emit('updateWordStatus', props.word, 3)
   close()
 }
 </script>
@@ -115,32 +140,27 @@ function handleForget() {
         无法获取单词信息
       </div>
       <template v-else>
-        <div class="word-header">
-          <h2>{{ word }}</h2>
-          <span class="phonetic">{{ phonetic }}</span>
-          <button class="audio-button" @click="playAudio">
-            <div i-carbon:ai-generate />
-          </button>
+        <div mb-2>
+          <p mb-1 text-xl>
+            {{ word }}
+          </p>
+          <p>{{ sentence }}</p>
+          <p>{{ chinese }}</p>
         </div>
-        <div class="meanings">
-          <div v-for="(meaning, index) in meanings" :key="index" class="meaning">
-            <h3>{{ meaning.partOfSpeech }}</h3>
-            <ol>
-              <li v-for="(definition, defIndex) in meaning.definitions[0]" :key="defIndex">
-                {{ definition.definition }}
-              </li>
-            </ol>
+        <div class="deepsek-content" :class="{ loading: isDeepseekLoading }">
+          <div v-if="isDeepseekLoading" class="loading-text">
+            加载中...
+          </div>
+          <div v-for="(value, key) in jsonContent" v-else :key="key" my-1>
+            <strong>{{ key }}:</strong> {{ value }}
           </div>
         </div>
         <div class="button-row">
-          <button class="action-button recognize" @click="handleRecognize">
-            认识
+          <button class="action-button recognize" @click="handleDeepseek">
+            deepseek
           </button>
-          <button class="action-button familiar" @click="handleFamiliar">
-            模糊
-          </button>
-          <button class="action-button forget" @click="handleForget">
-            忘记
+          <button v-if="canAdd" class="action-button familiar" @click="handleMemorize">
+            加入记忆
           </button>
         </div>
       </template>
@@ -253,5 +273,17 @@ function handleForget() {
 
 .error {
   color: #f44336;
+}
+
+.deepsek-content.loading {
+  position: relative;
+  min-height: 50px;
+}
+
+.loading-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 </style>
